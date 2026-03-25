@@ -1,49 +1,51 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
-model User { 
-  id            Int         @id @default(autoincremente())
-  name          String      @default("user")
-  email         String      @unique
-  password      String
+model User {
+  id          String      @id @default(uuid())
+  name        String      @default("user")
+  email       String      @unique
+  password    String
+
+  createdAt   DateTime    @default(now()) 
 }
 
-model Products [
-  id            Int         @id @default(autoincremente())
-  name          String
-  description   String?
-  imagemUrl     String?
-  sku           String      @unique
-  price         Decimal     @db.Decimal(10, 2)
-  stock         Int
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-
-  orderItems    OrderItem[]
-]
-
-model Order {
+model Product {
   id          Int         @id @default(autoincrement())
-  total       Decimal     @db.Decimal(10, 2)
+  name        String
+  description String?
+  imageUrl    String?
+  sku         String      @unique
+  price       Decimal     @db.Decimal(10, 2)
+  stock       Int
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
-  items       OrderItem[]
+  orderItems  OrderItem[]
+}
+
+model Order {
+  id        Int         @id @default(autoincrement())
+  total     Decimal     @db.Decimal(10, 2)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  items     OrderItem[]
 }
 
 model OrderItem {
-  id          Int      @id @default(autoincrement())
-  orderId     Int
-  productId   Int
-  quantity    Int
-  price       Decimal  @db.Decimal(10, 2)
+  id        Int       @id @default(autoincrement())
+  orderId   Int
+  productId Int
+  quantity  Int
+  price     Decimal   @db.Decimal(10, 2)
 
-  order       Order    @relation(fields: [orderId], references: [id])
-  product     Product  @relation(fields: [productId], references: [id])
+  order     Order     @relation(fields: [orderId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
 }
