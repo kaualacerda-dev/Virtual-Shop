@@ -1,40 +1,56 @@
 import {
-  Controller,
-  Post,
-  UseGuards,
-  UseInterceptors,
-  UploadedFile,
-  Req,
-  Get,
   BadRequestException,
   Body,
-  Param,
+  Controller,
   Delete,
+  Get,
+  Param,
+  Post,
   Query,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { UserRole } from '@prisma/client';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { ProductService } from './product.service';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { CreateDto } from './dto/create.dto';
+import { ProductService } from './product.service';
 
-type RequestWithProduct = {
-  product: {
-    productId: number;
-    name: string;
-    sku: string;
-    price: number;
-    description: string;
-  };
+type UploadedImageFile = {
+  buffer: Buffer;
+  mimetype: string;
+  originalname: string;
+  size: number;
 };
 
 @Controller('product')
 export class ProductController {
   constructor(private productService: ProductService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Post('create')
-  async create(@Body() dto: CreateDto) {
-    return this.productService.create(dto);
+  @UseInterceptors(
+    FileInterceptor('image', {
+      limits: {
+        fileSize: 5 * 1024 * 1024,
+      },
+    }),
+  )
+  async create(
+    @Body() dto: CreateDto,
+    @UploadedFile() file?: UploadedImageFile,
+  ) {
+    if (!file && !dto.imageUrl) {
+      throw new BadRequestException(
+        'Envie uma imagem no campo "image" ou informe imageUrl.',
+      );
+    }
+
+    return this.productService.create(dto, file);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -57,9 +73,10 @@ export class ProductController {
     });
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Delete(':id')
-  Delete(@Param('id') id: string) {
+  delete(@Param('id') id: string) {
     return this.productService.delete(Number(id));
   }
 }

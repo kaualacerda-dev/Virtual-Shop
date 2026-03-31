@@ -1,18 +1,25 @@
 import {
   BadRequestException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
-  UnauthorizedException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDto } from './dto/create.dto';
-import { Prisma } from '@prisma/client';
+
+type UploadedImageFile = {
+  buffer: Buffer;
+  mimetype: string;
+  originalname: string;
+  size: number;
+};
 
 @Injectable()
 export class ProductService {
   constructor(private prisma: PrismaService) {}
 
-  async create(dto: CreateDto) {
+  async create(dto: CreateDto, file?: UploadedImageFile) {
     const productExists = await this.prisma.product.findUnique({
       where: { sku: dto.sku },
     });
@@ -21,27 +28,87 @@ export class ProductService {
       throw new BadRequestException('Produto já existe!');
     }
 
+    const price = Number(dto.price);
+    const stock = Number(dto.stock);
+
+    if (Number.isNaN(price) || Number.isNaN(stock)) {
+      throw new BadRequestException('price e stock precisam ser numéricos.');
+    }
+
+    const uploadedImage = file ? await this.uploadImage(file) : null;
+    const imageUrl = uploadedImage?.url || dto.imageUrl;
+
     const product = await this.prisma.product.create({
       data: {
         name: dto.name,
-        price: dto.price,
-        stock: dto.stock,
+        category: dto.category,
+        price,
+        stock,
         sku: dto.sku,
-        imageUrl: dto.imageUrl,
+        imageUrl,
         description: dto.description,
       },
-      select: {
-        id: true,
-        sku: true,
-        stock: true,
-        price: true,
-        description: true,
-        name: true,
-        createdAt: true,
-      },
+      select: this.productSelect,
     });
 
     return { product };
+  }
+
+  async uploadImage(file: UploadedImageFile) {
+    if (!file.mimetype?.startsWith('image/')) {
+      throw new BadRequestException('Apenas arquivos de imagem são permitidos.');
+    }
+
+    const uploadUrl = process.env.IMGBB_API_URL;
+
+    if (!uploadUrl) {
+      throw new InternalServerErrorException(
+        'IMGBB_API_URL não configurada no ambiente.',
+      );
+    }
+
+    const requestUrl = new URL(uploadUrl);
+    const apiKey = process.env.IMGBB_API_KEY;
+
+    if (apiKey && !requestUrl.searchParams.has('key')) {
+      requestUrl.searchParams.set('key', apiKey);
+    }
+
+    const payload = new URLSearchParams();
+    payload.append('image', file.buffer.toString('base64'));
+    payload.append('name', file.originalname);
+
+    const response = await fetch(requestUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: payload,
+    });
+
+    const result = (await response.json()) as {
+      success?: boolean;
+      data?: {
+        url?: string;
+        display_url?: string;
+        delete_url?: string;
+      };
+      error?: {
+        message?: string;
+      };
+    };
+
+    if (!response.ok || !result.success || !result.data?.url) {
+      throw new BadRequestException(
+        result.error?.message || 'Falha ao enviar imagem para o ImgBB.',
+      );
+    }
+
+    return {
+      url: result.data.url,
+      displayUrl: result.data.display_url,
+      deleteUrl: result.data.delete_url,
+    };
   }
 
   async getProducts(params: {
@@ -64,7 +131,7 @@ export class ProductService {
     const skip = (page - 1) * limit;
 
     const where: Prisma.ProductWhereInput = {
-      sku: sku,
+      sku,
       name: name
         ? {
             contains: name,
@@ -80,15 +147,7 @@ export class ProductService {
       orderBy: {
         [orderBy]: order,
       },
-      select: {
-        id: true,
-        name: true,
-        sku: true,
-        stock: true,
-        price: true,
-        description: true,
-        createdAt: true,
-      },
+      select: this.productSelect,
     });
 
     const total = await this.prisma.product.count({
@@ -121,4 +180,16 @@ export class ProductService {
       },
     });
   }
+
+  private readonly productSelect = {
+    id: true,
+    sku: true,
+    stock: true,
+    price: true,
+    description: true,
+    imageUrl: true,
+    name: true,
+    category: true,
+    createdAt: true,
+  } satisfies Prisma.ProductSelect;
 }

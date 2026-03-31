@@ -1,18 +1,15 @@
 import {
   Controller,
-  Post,
   UseGuards,
-  UseInterceptors,
-  UploadedFile,
   Req,
   Get,
-  BadRequestException,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UsersService } from './users.service';
 
-type RequestWithUser = { user: { userId: string; email: string } };
+type RequestWithUser = {
+  user: { userId: string; email: string; role: string };
+};
 
 @Controller('users')
 export class UsersController {
